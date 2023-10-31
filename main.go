@@ -3,16 +3,24 @@ package main
 import (
 	"log"
 	"net"
+	"strings"
 )
 
+type client struct {
+	conn net.Conn
+	nick string
+}
+
 // FIXME: Lock the global
-var conns = make(map[net.Conn]bool)
+var clients = make(map[*client]bool)
 
 func handleConnection(conn net.Conn) {
 	defer conn.Close()
 
-	conns[conn] = true
-	defer delete(conns, conn)
+	client := client{conn: conn, nick: "Anon"}
+
+	clients[&client] = true
+	defer delete(clients, &client)
 
 	buf := make([]byte, 1024)
 	for {
@@ -21,10 +29,30 @@ func handleConnection(conn net.Conn) {
 			break
 		}
 
-		for c := range conns {
-			if c != conn {
-				c.Write(buf[:n])
+		if buf[0] != '/' {
+			for c := range clients {
+				if c == &client {
+					continue
+				}
+				c.conn.Write([]byte(client.nick))
+				c.conn.Write([]byte(": "))
+				c.conn.Write(buf[:n])
 			}
+			continue
+		}
+
+		fields := strings.Fields(string(buf[:n]))
+		switch fields[0] {
+		case "/nick":
+			// FIXME: Check # of args
+			client.nick = fields[1]
+			client.conn.Write([]byte("Nickname changed to "))
+			client.conn.Write([]byte(client.nick))
+			client.conn.Write([]byte("\n"))
+		default:
+			client.conn.Write([]byte("Unknown command: "))
+			client.conn.Write([]byte(fields[0]))
+			client.conn.Write([]byte("\n"))
 		}
 	}
 }
