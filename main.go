@@ -1,16 +1,32 @@
 package main
 
 import (
-	"io"
 	"log"
 	"net"
 )
 
+// FIXME: Lock the global
+var conns = make(map[net.Conn]bool)
+
 func handleConnection(conn net.Conn) {
-	// Echo all incoming data.
-	io.Copy(conn, conn)
-	// Shut down the connection.
-	conn.Close()
+	defer conn.Close()
+
+	conns[conn] = true
+	defer delete(conns, conn)
+
+	buf := make([]byte, 1024)
+	for {
+		n, err := conn.Read(buf)
+		if n == 0 && err != nil {
+			break
+		}
+
+		for c := range conns {
+			if c != conn {
+				c.Write(buf[:n])
+			}
+		}
+	}
 }
 
 func main() {
