@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"net"
 	"strings"
@@ -17,10 +18,10 @@ var clients = make(map[*client]bool)
 func handleConnection(conn net.Conn) {
 	defer conn.Close()
 
-	client := client{conn: conn, nick: "Anon"}
+	client := &client{conn: conn, nick: "Anon"}
 
-	clients[&client] = true
-	defer delete(clients, &client)
+	clients[client] = true
+	defer delete(clients, client)
 
 	buf := make([]byte, 1024)
 	for {
@@ -31,12 +32,10 @@ func handleConnection(conn net.Conn) {
 
 		if buf[0] != '/' {
 			for c := range clients {
-				if c == &client {
+				if c == client {
 					continue
 				}
-				c.conn.Write([]byte(client.nick))
-				c.conn.Write([]byte(": "))
-				c.conn.Write(buf[:n])
+				fmt.Fprintf(c.conn, "%s: %s", client.nick, buf[:n])
 			}
 			continue
 		}
@@ -44,15 +43,14 @@ func handleConnection(conn net.Conn) {
 		fields := strings.Fields(string(buf[:n]))
 		switch fields[0] {
 		case "/nick":
-			// FIXME: Check # of args
+			if len(fields) != 2 {
+				fmt.Fprintln(client.conn, "/nick: bad arguments")
+				continue
+			}
 			client.nick = fields[1]
-			client.conn.Write([]byte("Nickname changed to "))
-			client.conn.Write([]byte(client.nick))
-			client.conn.Write([]byte("\n"))
+			fmt.Fprintf(client.conn, "Nickname changed to %s\n", client.nick)
 		default:
-			client.conn.Write([]byte("Unknown command: "))
-			client.conn.Write([]byte(fields[0]))
-			client.conn.Write([]byte("\n"))
+			fmt.Fprintf(client.conn, "Unknown command: %s\n", fields[0])
 		}
 	}
 }
