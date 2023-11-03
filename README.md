@@ -4,6 +4,8 @@ A TCP chat server.
 
 ## Quickstart
 
+To start the server on the default port 2428 (*chat* typed on a telephone):
+
 ```
 go run main.go
 ```
