@@ -29,6 +29,7 @@ func handleConnection(conn net.Conn) {
 	clients[client] = true
 
 	buf := make([]byte, 1024)
+outer:
 	for {
 		n, err := conn.Read(buf)
 		if n == 0 && err != nil {
@@ -86,6 +87,8 @@ func handleConnection(conn net.Conn) {
 				}
 				client.room = nil
 			}
+		case "/quit":
+			break outer
 		default:
 			fmt.Fprintf(client.conn, "Unknown command: %s\n", fields[0])
 		}
