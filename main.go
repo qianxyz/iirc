@@ -7,21 +7,26 @@ import (
 	"strings"
 )
 
-type client struct {
+type Client struct {
 	conn net.Conn
 	nick string
+	room *Room
+}
+
+type Room struct {
+	name    string
+	clients map[*Client]bool
 }
 
 // FIXME: Lock the global
-var clients = make(map[*client]bool)
+var (
+	clients = make(map[*Client]bool)
+	rooms   = make(map[string]*Room)
+)
 
 func handleConnection(conn net.Conn) {
-	defer conn.Close()
-
-	client := &client{conn: conn, nick: "Anon"}
-
+	client := &Client{conn: conn, nick: "Anon"}
 	clients[client] = true
-	defer delete(clients, client)
 
 	buf := make([]byte, 1024)
 	for {
@@ -31,7 +36,11 @@ func handleConnection(conn net.Conn) {
 		}
 
 		if buf[0] != '/' {
-			for c := range clients {
+			if client.room == nil {
+				// TODO: tell client
+				continue
+			}
+			for c := range client.room.clients {
 				if c == client {
 					continue
 				}
@@ -49,10 +58,47 @@ func handleConnection(conn net.Conn) {
 			}
 			client.nick = fields[1]
 			fmt.Fprintf(client.conn, "Nickname changed to %s\n", client.nick)
+		case "/join":
+			if len(fields) != 2 {
+				fmt.Fprintln(client.conn, "/join: bad arguments")
+				continue
+			}
+
+			// find the room, create if not exist
+			name := fields[1]
+			room, ok := rooms[name]
+			if !ok {
+				room = &Room{name: name, clients: make(map[*Client]bool)}
+				rooms[name] = room
+			}
+
+			// register the client with the room
+			room.clients[client] = true
+			client.room = room
+
+			// TODO: notify room members
+		case "/leave":
+			// TODO: notify room members
+			if client.room != nil {
+				delete(client.room.clients, client)
+				if len(client.room.clients) == 0 {
+					delete(rooms, client.room.name)
+				}
+				client.room = nil
+			}
 		default:
 			fmt.Fprintf(client.conn, "Unknown command: %s\n", fields[0])
 		}
 	}
+
+	delete(clients, client)
+	if client.room != nil {
+		delete(client.room.clients, client)
+		if len(client.room.clients) == 0 {
+			delete(rooms, client.room.name)
+		}
+	}
+	conn.Close()
 }
 
 func main() {
