@@ -65,6 +65,14 @@ outer:
 				continue
 			}
 
+			// if already in a room, exit
+			if client.room != nil {
+				delete(client.room.clients, client)
+				if len(client.room.clients) == 0 {
+					delete(rooms, client.room.name)
+				}
+			}
+
 			// find the room, create if not exist
 			name := fields[1]
 			room, ok := rooms[name]
