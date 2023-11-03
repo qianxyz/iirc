@@ -123,7 +123,7 @@ outer:
 }
 
 func main() {
-	l, err := net.Listen("tcp", ":6969")
+	l, err := net.Listen("tcp", ":2428")
 	if err != nil {
 		log.Fatal(err)
 	}
