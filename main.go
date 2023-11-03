@@ -19,14 +19,47 @@ type Room struct {
 }
 
 // FIXME: Lock the global
-var (
-	clients = make(map[*Client]bool)
-	rooms   = make(map[string]*Room)
-)
+var rooms = make(map[string]*Room)
+
+func (c *Client) join(room *Room) {
+	if c.room != nil {
+		c.leave()
+	}
+
+	room.clients[c] = true
+	c.room = room
+
+	msg := fmt.Sprintf("%s joined the room.\n", c.nick)
+	room.broadcast(msg, c)
+}
+
+func (c *Client) leave() {
+	room := c.room
+	if room == nil {
+		return
+	}
+
+	msg := fmt.Sprintf("%s left the room.\n", c.nick)
+	room.broadcast(msg, c)
+
+	delete(room.clients, c)
+	if len(room.clients) == 0 {
+		delete(rooms, room.name)
+	}
+	c.room = nil
+}
+
+func (r *Room) broadcast(msg string, exclude *Client) {
+	for c := range r.clients {
+		if c == exclude {
+			continue
+		}
+		fmt.Fprint(c.conn, msg)
+	}
+}
 
 func handleConnection(conn net.Conn) {
 	client := &Client{conn: conn, nick: "Anon"}
-	clients[client] = true
 
 	buf := make([]byte, 1024)
 outer:
@@ -38,15 +71,13 @@ outer:
 
 		if buf[0] != '/' {
 			if client.room == nil {
-				// TODO: tell client
-				continue
+				fmt.Fprintln(client.conn, "You are not in a room.")
+				fmt.Fprintln(client.conn, "Use `/join` to join one.")
+			} else {
+				msg := fmt.Sprintf("%s: %s", client.nick, buf[:n])
+				client.room.broadcast(msg, client)
 			}
-			for c := range client.room.clients {
-				if c == client {
-					continue
-				}
-				fmt.Fprintf(c.conn, "%s: %s", client.nick, buf[:n])
-			}
+
 			continue
 		}
 
@@ -58,19 +89,11 @@ outer:
 				continue
 			}
 			client.nick = fields[1]
-			fmt.Fprintf(client.conn, "Nickname changed to %s\n", client.nick)
+			fmt.Fprintf(client.conn, "Nickname changed to %s.\n", client.nick)
 		case "/join":
 			if len(fields) != 2 {
 				fmt.Fprintln(client.conn, "/join: bad arguments")
 				continue
-			}
-
-			// if already in a room, exit
-			if client.room != nil {
-				delete(client.room.clients, client)
-				if len(client.room.clients) == 0 {
-					delete(rooms, client.room.name)
-				}
 			}
 
 			// find the room, create if not exist
@@ -81,19 +104,12 @@ outer:
 				rooms[name] = room
 			}
 
-			// register the client with the room
-			room.clients[client] = true
-			client.room = room
-
-			// TODO: notify room members
+			client.join(room)
 		case "/leave":
-			// TODO: notify room members
-			if client.room != nil {
-				delete(client.room.clients, client)
-				if len(client.room.clients) == 0 {
-					delete(rooms, client.room.name)
-				}
-				client.room = nil
+			if client.room == nil {
+				fmt.Fprintln(client.conn, "You are not in a room.")
+			} else {
+				client.leave()
 			}
 		case "/quit":
 			break outer
@@ -102,13 +118,7 @@ outer:
 		}
 	}
 
-	delete(clients, client)
-	if client.room != nil {
-		delete(client.room.clients, client)
-		if len(client.room.clients) == 0 {
-			delete(rooms, client.room.name)
-		}
-	}
+	client.leave()
 	conn.Close()
 }
 
